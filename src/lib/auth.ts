@@ -84,7 +84,19 @@ export async function exigirAdmin(): Promise<Usuario> {
   return u;
 }
 
-export function criarToken(userId: string, tipo: "verificar" | "reset", validadeMs: number) {
+type TipoToken = "verificar" | "reset" | "ativar";
+
+/** Olha o token sem gastar (para mostrar a tela certa). Devolve o que ele guarda: user_id, ou o e-mail no tipo "ativar". */
+export function espiarToken(token: string, tipo: TipoToken): string | null {
+  const t = um<{ user_id: string; expira_em: number; usado_em: number }>(
+    "SELECT user_id, expira_em, usado_em FROM tokens WHERE token_hash = ? AND tipo = ?",
+    sha(token),
+    tipo,
+  );
+  return !t || t.usado_em || t.expira_em < agora() ? null : t.user_id;
+}
+
+export function criarToken(userId: string, tipo: TipoToken, validadeMs: number) {
   const token = randomBytes(32).toString("base64url");
   rodar(
     "INSERT INTO tokens (token_hash, user_id, tipo, expira_em) VALUES (?,?,?,?)",
@@ -96,7 +108,7 @@ export function criarToken(userId: string, tipo: "verificar" | "reset", validade
   return token;
 }
 
-export function consumirToken(token: string, tipo: "verificar" | "reset"): string | null {
+export function consumirToken(token: string, tipo: TipoToken): string | null {
   const t = um<{ user_id: string; expira_em: number; usado_em: number }>(
     "SELECT user_id, expira_em, usado_em FROM tokens WHERE token_hash = ? AND tipo = ?",
     sha(token),

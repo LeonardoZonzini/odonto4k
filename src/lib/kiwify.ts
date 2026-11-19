@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { agora, DIA, evento, rodar, todos, transacao, um } from "./db";
 import { PACOTE, TOLERANCIA_PAGAMENTO_DIAS } from "./config";
 import { lancar, saldoDe, sincronizarCreditos, Usuario } from "./creditos";
+import { liberarEmail, revogarEmail } from "./liberacao";
 
 type Carga = {
   order_id?: string;
@@ -97,15 +98,36 @@ function aplicar(u: Usuario, item: "pro" | "clinica" | "pacote", tipo: NonNullab
   }
 }
 
+/** Produto(s) do front do funil. Aceita mais de um ID separado por vírgula (front + order bump, por exemplo). */
+function ehFront(id?: string) {
+  if (!id) return false;
+  return (process.env.KIWIFY_PRODUTO_FRONT || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .includes(id);
+}
+
 export function processarKiwify(c: Carga): string {
   const tipo = tipoDoEvento(c);
+  const front = ehFront(c.Product?.product_id);
   const item = itemDoProduto(c.Product?.product_id);
   const email = (c.Customer?.email || "").trim().toLowerCase();
-  if (!tipo || !item || !email) return "ignorado";
+  if (!tipo || (!item && !front) || !email) return "ignorado";
   const chave = `${c.order_id || email}:${c.webhook_event_type || c.order_status}:${c.Subscription?.next_payment || ""}`;
   if (um("SELECT id FROM kiwify_eventos WHERE id = ?", chave)) return "repetido";
   // Só marca o evento como visto depois de aplicar: se der erro no meio, a Kiwify reenvia e o pagamento não se perde.
   const visto = () => rodar("INSERT OR IGNORE INTO kiwify_eventos (id, criado_em) VALUES (?,?)", chave, agora());
+  if (front) {
+    // Compra do front: libera o e-mail do checkout para criar a conta com os créditos de boas-vindas.
+    // Reembolso e chargeback tiram a liberação e os créditos que sobraram. Outros eventos não interessam aqui.
+    let r = "ignorado";
+    if (tipo === "pago") r = liberarEmail(email, c.order_id || "", "kiwify");
+    if (tipo === "estornado") r = revogarEmail(email, c.order_id || "", "kiwify");
+    visto();
+    return `front:${r}`;
+  }
+  if (!item) return "ignorado";
   const u = um<Usuario>("SELECT * FROM users WHERE email = ?", email);
   if (!u) {
     rodar("INSERT INTO compras_pendentes (email, dados, criado_em) VALUES (?,?,?)", email, JSON.stringify(c), agora());

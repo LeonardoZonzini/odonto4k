@@ -25,7 +25,7 @@ import { ItemAnalise, montarAnalise, RODAPE_ANALISE } from "./textos";
 type Etapa = "foto" | "analise" | "simulacao" | "comparar" | "proposta";
 type ModoSim = "clareamento" | "lentes" | "aparelho";
 type Geracao = { id: string; tipo: "lentes" | "aparelho"; params: Record<string, unknown>; imagens: string[]; criado_em: number };
-type PropostaItem = { id: string; token: string; titulo: string; valor: string; visualizacoes: number; criado_em: number };
+type PropostaItem = { id: string; token: string; titulo: string; valor: string; visualizacoes: number; criado_em: number; ciencia_em: number };
 type Foto = { caminho: string; largura: number; altura: number; v: number };
 type EstadoSalvo = { pontos?: Editaveis; nivel?: number; base?: string };
 
@@ -386,7 +386,7 @@ export function Estudio(props: PropsEstudio) {
       });
       const j = await r.json();
       if (!r.ok) return avisar(j.erro || "Não foi possível criar a proposta.", true);
-      setPropostas((p) => [{ id: j.id, token: j.token, titulo: form.titulo, valor: form.valor, visualizacoes: 0, criado_em: Date.now() }, ...p]);
+      setPropostas((p) => [{ id: j.id, token: j.token, titulo: form.titulo, valor: form.valor, visualizacoes: 0, criado_em: Date.now(), ciencia_em: 0 }, ...p]);
       avisar("Proposta criada. Envie o link para o paciente.");
     } catch {
       avisar("Falha de conexão. Tente de novo.", true);
@@ -899,6 +899,9 @@ export function Estudio(props: PropsEstudio) {
                       <IcOlho className="h-3.5 w-3.5" /> {p.visualizacoes}
                     </span>
                   </div>
+                  <span className="note">
+                    {p.ciencia_em ? `✓ Paciente confirmou a ciência em ${new Date(p.ciencia_em).toLocaleDateString("pt-BR")}` : "Paciente ainda não confirmou a ciência"}
+                  </span>
                   <code className="truncate rounded-md border border-line bg-black px-2.5 py-2 font-mono text-[12px] text-champ">{linkDe(p.token)}</code>
                   <a className="btn ok" href={zapDe(p.token)} target="_blank" rel="noreferrer">
                     <IcEnviar className="h-5 w-5" /> Enviar no WhatsApp

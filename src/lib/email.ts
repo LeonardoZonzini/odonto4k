@@ -56,6 +56,18 @@ export function emailVerificacao(para: string, nome: string, token: string) {
   );
 }
 
+export function emailAtivacao(para: string, token: string) {
+  return enviarEmail(
+    para,
+    "Seu acesso ao Odonto 4K está liberado",
+    molde(
+      "Ative seu acesso",
+      "Sua compra foi confirmada e o simulador de sorriso é um presente para você. Toque no botão para criar sua senha e entrar. O link vale por 48 horas e só funciona uma vez.",
+      { texto: "Ativar meu acesso", url: `${APP_URL}/criar-conta?token=${token}` },
+    ),
+  );
+}
+
 export function emailRedefinir(para: string, token: string) {
   return enviarEmail(
     para,

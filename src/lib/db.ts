@@ -2,9 +2,10 @@ import "server-only";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { randomBytes, scryptSync } from "node:crypto";
 
-export const DATA_DIR = path.resolve(process.env.DATA_DIR || "./data");
+// Na Vercel só /tmp é gravável (e some entre execuções); fora dela vale DATA_DIR.
+export const DATA_DIR = process.env.VERCEL ? "/tmp/odonto4k" : path.resolve(process.env.DATA_DIR || "./data");
 export const ARQUIVOS_DIR = path.join(DATA_DIR, "arquivos");
 
 const ESQUEMA = `
@@ -135,6 +136,25 @@ CREATE TABLE IF NOT EXISTS kiwify_eventos (
   id TEXT PRIMARY KEY,
   criado_em INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS liberacoes (
+  email TEXT PRIMARY KEY,
+  pedido TEXT NOT NULL DEFAULT '',
+  origem TEXT NOT NULL DEFAULT 'kiwify',
+  status TEXT NOT NULL DEFAULT 'ativo',
+  user_id TEXT NOT NULL DEFAULT '',
+  criado_em INTEGER NOT NULL,
+  ativado_em INTEGER NOT NULL DEFAULT 0,
+  estornado_em INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS ciencias (
+  proposta_id TEXT PRIMARY KEY,
+  tratamentos TEXT NOT NULL DEFAULT '[]',
+  versao TEXT NOT NULL DEFAULT '',
+  texto_hash TEXT NOT NULL DEFAULT '',
+  aceito_em INTEGER NOT NULL DEFAULT 0,
+  ip TEXT NOT NULL DEFAULT '',
+  agente TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS emails_enviados (
   user_id TEXT NOT NULL,
   tipo TEXT NOT NULL,
@@ -153,7 +173,30 @@ function abrir(): DatabaseSync {
   db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;");
   db.exec(ESQUEMA);
   g.__o4kDb = db;
+  semearConta(db);
   return db;
+}
+
+// Conta de acesso criada sozinha quando o banco nasce vazio (útil na Vercel, onde o disco é /tmp
+// e some entre execuções). Só age se SEED_EMAIL e SEED_SENHA estiverem definidos.
+function semearConta(db: DatabaseSync) {
+  const email = (process.env.SEED_EMAIL || "").trim().toLowerCase();
+  const senha = process.env.SEED_SENHA || "";
+  if (!email || !senha) return;
+  try {
+    if (db.prepare("SELECT id FROM users WHERE email = ?").get(email)) return;
+    const sal = randomBytes(16);
+    const h = scryptSync(senha, sal, 64, { N: 16384, r: 8, p: 1 });
+    const hash = `scrypt$${sal.toString("base64")}$${h.toString("base64")}`;
+    const id = randomBytes(12).toString("base64url");
+    const t = Date.now();
+    db.prepare(
+      "INSERT INTO users (id,email,nome,whatsapp,senha_hash,email_verificado,plano,teste_fim,ip_cadastro,criado_em,ultimo_acesso) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+    ).run(id, email, "Conta Teste", "00000000000", hash, 1, "teste", t + 30 * 86400000, "local", t, t);
+    db.prepare("INSERT INTO ledger (user_id,bolsa,delta,motivo,ref,criado_em) VALUES (?,?,?,?,?,?)").run(
+      id, "plano", 10, "Créditos do teste gratuito", "", t,
+    );
+  } catch {}
 }
 
 type Param = string | number | bigint | null | Uint8Array;

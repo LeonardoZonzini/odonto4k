@@ -11,6 +11,8 @@ const SECOES: [string, string[]][] = [
   ["3. Simulações", [
     "Toda imagem de resultado é uma simulação gerada por computador. Ela não representa promessa nem garantia de resultado clínico.",
     "É responsabilidade do profissional apresentar as imagens ao paciente como simulação, de acordo com o Código de Ética Odontológica e as normas do Conselho Federal de Odontologia sobre publicidade e divulgação.",
+    "A página da proposta traz ao paciente informações sobre os limites e os riscos mais comuns de cada tratamento simulado, e um campo para ele confirmar que leu e entendeu. Esse registro guarda data, hora e endereço de IP, e serve como comprovação de que o paciente foi informado sobre a simulação.",
+    "A confirmação do paciente na proposta não substitui o termo de consentimento do procedimento clínico. Esse termo, a anamnese e a autorização do tratamento continuam sendo responsabilidade exclusiva do cirurgião-dentista, no consultório.",
     "As imagens exportadas e as propostas recebem a marca “SIMULAÇÃO”. É proibido remover essa marca ou divulgar a simulação como resultado real de tratamento.",
   ]],
   ["4. Fotos de pacientes", [

@@ -28,8 +28,10 @@ export default async function PaginaEstudio({
     "SELECT id, tipo, params, imagens, criado_em FROM generations WHERE plan_id = ? AND status = 'pronto' ORDER BY criado_em DESC",
     planId,
   ).map((g) => ({ ...g, params: JSON.parse(g.params), imagens: JSON.parse(g.imagens) as string[] }));
-  const propostas = todos<{ id: string; token: string; titulo: string; valor: string; visualizacoes: number; criado_em: number }>(
-    "SELECT id, token, titulo, valor, visualizacoes, criado_em FROM proposals WHERE plan_id = ? ORDER BY criado_em DESC",
+  const propostas = todos<{ id: string; token: string; titulo: string; valor: string; visualizacoes: number; criado_em: number; ciencia_em: number }>(
+    `SELECT pr.id, pr.token, pr.titulo, pr.valor, pr.visualizacoes, pr.criado_em,
+       COALESCE((SELECT aceito_em FROM ciencias WHERE proposta_id = pr.id), 0) AS ciencia_em
+     FROM proposals pr WHERE pr.plan_id = ? ORDER BY pr.criado_em DESC`,
     planId,
   );
   let estado = {};

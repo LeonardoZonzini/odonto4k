@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { entrar } from "@/app/acoes";
 import { usuarioAtual } from "@/lib/auth";
+import { cadastroAberto } from "@/lib/config";
 import { Formulario } from "@/components/ui";
 
 export const metadata = { title: "Entrar" };
@@ -32,9 +33,9 @@ export default async function Entrar({ searchParams }: { searchParams: Promise<{
           Esqueci minha senha
         </Link>
         <p className="note">
-          Ainda não tem conta?{" "}
+          {cadastroAberto() ? "Ainda não tem conta? " : "Comprou o método e ainda não ativou? "}
           <Link href="/criar-conta" className="text-gold">
-            Criar conta
+            {cadastroAberto() ? "Criar conta" : "Ativar acesso"}
           </Link>
         </p>
       </div>

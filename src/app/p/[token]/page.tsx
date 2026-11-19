@@ -5,6 +5,8 @@ import { usuarioAtual } from "@/lib/auth";
 import { rodar, um } from "@/lib/db";
 import { lerArquivo } from "@/lib/imagem";
 import { Comparador } from "@/components/ui";
+import { CienciaPaciente } from "@/components/CienciaPaciente";
+import { GERAL, TEXTO_CONFIRMACAO, TRATAMENTOS, tratamentosValidos } from "@/lib/ciencia";
 
 type Linha = {
   id: string; user_id: string; antes: string; titulo: string; texto: string; valor: string; criado_em: number;
@@ -37,6 +39,12 @@ export default async function Proposta({ params }: { params: Promise<{ token: st
   const meta = await sharp(await lerArquivo(p.antes)).metadata();
   const proporcao = (meta.width || 4) / (meta.height || 5);
   const primeiro = p.paciente.split(" ")[0];
+  const ciencia = um<{ tratamentos: string; aceito_em: number }>("SELECT tratamentos, aceito_em FROM ciencias WHERE proposta_id = ?", p.id);
+  let lista: string[] = [];
+  try {
+    lista = JSON.parse(ciencia?.tratamentos || "[]");
+  } catch {}
+  const blocos = tratamentosValidos(lista).map((t) => TRATAMENTOS[t]);
   const marca = p.clinica_nome || p.dentista;
   const mensagem = `Olá! Vi a proposta "${p.titulo}" e quero agendar.`;
   return (
@@ -72,6 +80,8 @@ export default async function Proposta({ params }: { params: Promise<{ token: st
           <span className="big !text-[38px]">{p.valor}</span>
         </div>
       )}
+
+      <CienciaPaciente token={token} geral={GERAL} blocos={blocos} confirmacao={TEXTO_CONFIRMACAO} aceitoEm={ciencia?.aceito_em || 0} />
 
       {p.whatsapp && (
         <a className="btn ok shine" href={`https://wa.me/${p.whatsapp}?text=${encodeURIComponent(mensagem)}`} target="_blank" rel="noreferrer">

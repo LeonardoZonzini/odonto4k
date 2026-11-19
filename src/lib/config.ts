@@ -2,6 +2,14 @@ export const APP_URL = (process.env.APP_URL || "http://localhost:3000").replace(
 
 export const TESTE = { dias: 7, creditos: 10 };
 
+/**
+ * O SaaS é um brinde da compra do front no funil: só e-mails liberados pela Kiwify (ou pelo admin) criam conta.
+ * CADASTRO_ABERTO=1 é o desvio: reabre o cadastro livre (para testar enquanto a Kiwify não está ligada).
+ */
+export function cadastroAberto() {
+  return process.env.CADASTRO_ABERTO === "1";
+}
+
 export type PlanoId = "pro" | "clinica";
 
 export const PLANOS: Record<

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { usuarioAtual } from "@/lib/auth";
-import { TESTE } from "@/lib/config";
+import { cadastroAberto, TESTE } from "@/lib/config";
 import { Vitrine } from "@/components/Vitrine";
 
 export default async function Entrada({ searchParams }: { searchParams: Promise<{ conta?: string }> }) {
@@ -19,13 +19,15 @@ export default async function Entrada({ searchParams }: { searchParams: Promise<
       <Vitrine />
       <div className="flex flex-col gap-3">
         <Link href="/criar-conta" className="btn shine">
-          Começar teste de {TESTE.dias} dias
+          {cadastroAberto() ? `Começar teste de ${TESTE.dias} dias` : "Ativar meu acesso"}
         </Link>
         <Link href="/entrar" className="btn vi">
           Já tenho conta
         </Link>
         <p className="note text-center">
-          {TESTE.creditos} simulações com IA incluídas no teste. Sem cartão de crédito.
+          {cadastroAberto()
+            ? `${TESTE.creditos} simulações com IA incluídas no teste. Sem cartão de crédito.`
+            : `Presente de quem comprou o método: ${TESTE.creditos} simulações com IA por ${TESTE.dias} dias.`}
         </p>
       </div>
     </>

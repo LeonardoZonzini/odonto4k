@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { adminCreditos, adminPlano, adminTicket } from "@/app/acoes";
+import { adminCreditos, adminLiberar, adminPlano, adminRevogar, adminTicket } from "@/app/acoes";
 import { exigirAdmin } from "@/lib/auth";
+import { cadastroAberto } from "@/lib/config";
+import { Liberacao } from "@/lib/liberacao";
 import { acessoDe, saldoDe, Usuario } from "@/lib/creditos";
 import { agora, DIA, todos, um } from "@/lib/db";
 import { iaDisponivel } from "@/lib/ia";
@@ -38,11 +40,14 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
     "SELECT nome, COUNT(*) AS n FROM events WHERE criado_em > ? GROUP BY nome ORDER BY n DESC LIMIT 20",
     t - 30 * DIA,
   );
+  const liberados = todos<Liberacao>("SELECT * FROM liberacoes ORDER BY criado_em DESC LIMIT 100");
   const servicos = [
     ["IA (OpenAI)", iaDisponivel()],
     ["E-mail (Resend)", Boolean(process.env.RESEND_API_KEY)],
     ["Webhook Kiwify", Boolean(process.env.KIWIFY_WEBHOOK_TOKEN)],
     ["Links de checkout", Boolean(process.env.KIWIFY_LINK_PRO_MENSAL && process.env.KIWIFY_LINK_CLINICA_MENSAL)],
+    ["Produto front (libera acesso)", Boolean(process.env.KIWIFY_PRODUTO_FRONT)],
+    ["Cadastro livre (desvio)", cadastroAberto()],
   ] as const;
   const data = (ts: number) => (ts ? new Date(ts).toLocaleDateString("pt-BR") : "—");
   return (
@@ -74,6 +79,64 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             </span>
           ))}
         </div>
+      </section>
+
+      <section className="card overflow-x-auto">
+        <div className="flex flex-wrap items-center gap-3">
+          <h3 className="flex-1">Compradores liberados</h3>
+          <form action={adminLiberar} className="flex gap-2">
+            <input name="email" type="email" required placeholder="E-mail a liberar" className="rounded-lg border border-line bg-black px-3 py-2 text-[14px]" />
+            <button className="btn sm dark">Liberar</button>
+          </form>
+        </div>
+        <table className="tabela">
+          <thead>
+            <tr>
+              <th>E-mail</th>
+              <th>Origem</th>
+              <th>Situação</th>
+              <th>Liberado em</th>
+              <th>Conta criada</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {liberados.map((l) => (
+              <tr key={l.email}>
+                <td>
+                  {l.email}
+                  {l.pedido && (
+                    <>
+                      <br />
+                      <span className="note">pedido {l.pedido}</span>
+                    </>
+                  )}
+                </td>
+                <td>{l.origem}</td>
+                <td>
+                  <span className={`tag ${l.status === "ativo" ? "gold" : "alert"}`}>{l.status === "ativo" ? "ativo" : "reembolsado"}</span>
+                </td>
+                <td>{data(l.criado_em)}</td>
+                <td>{l.ativado_em ? data(l.ativado_em) : "ainda não"}</td>
+                <td>
+                  {l.status === "ativo" && (
+                    <form action={adminRevogar}>
+                      <input type="hidden" name="email" value={l.email} />
+                      <button className="btn sm dark !px-2 !py-1">Revogar</button>
+                    </form>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {liberados.length === 0 && (
+              <tr>
+                <td colSpan={6} className="note">
+                  Nenhuma compra liberada ainda.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </section>
 
       <section className="card overflow-x-auto">

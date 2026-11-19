@@ -7,6 +7,7 @@ import { recuperarGeracoesPresas } from "./ia";
 import { apagarPasta } from "./imagem";
 
 export async function apagarDadosClinicos(userId: string) {
+  rodar("DELETE FROM ciencias WHERE proposta_id IN (SELECT id FROM proposals WHERE user_id = ?)", userId);
   rodar("DELETE FROM proposals WHERE user_id = ?", userId);
   rodar("DELETE FROM generations WHERE user_id = ?", userId);
   rodar("DELETE FROM plans WHERE user_id = ?", userId);

@@ -13,15 +13,17 @@ import {
   criarToken,
   dentroDoLimite,
   encerrarSessao,
+  espiarToken,
   exigirAdmin,
   exigirUsuario,
   hashSenha,
   ipDoPedido,
 } from "@/lib/auth";
 import { acessoDe, lancar, Usuario } from "@/lib/creditos";
-import { linkCheckout, TESTE } from "@/lib/config";
-import { emailRedefinir, emailSuporte, emailVerificacao } from "@/lib/email";
+import { cadastroAberto, linkCheckout, TESTE } from "@/lib/config";
+import { emailAtivacao, emailRedefinir, emailSuporte, emailVerificacao } from "@/lib/email";
 import { aplicarComprasPendentes } from "@/lib/kiwify";
+import { concederCreditos, liberacaoDe, liberarEmail, revogarEmail } from "@/lib/liberacao";
 import { apagarDadosClinicos } from "@/lib/manutencao";
 import { apagarPasta, caminhoAbsoluto, lerArquivo, normalizarFoto, salvarArquivo } from "@/lib/imagem";
 
@@ -38,6 +40,7 @@ function normalizarWhats(bruto: string) {
 }
 
 export async function criarConta(_: Estado, fd: FormData): Promise<Estado> {
+  if (!cadastroAberto()) return { erro: "O cadastro livre está fechado. Use o e-mail da sua compra para ativar o acesso." };
   const ip = await ipDoPedido();
   if (!dentroDoLimite(`cadastro:${ip}`, 6, 10 * 60 * 1000)) return { erro: "Muitas tentativas. Aguarde alguns minutos." };
   const nome = texto(fd, "nome", 80);
@@ -75,6 +78,68 @@ export async function criarConta(_: Estado, fd: FormData): Promise<Estado> {
   await emailVerificacao(email, nome, criarToken(id, "verificar", 2 * DIA));
   await criarSessao(id);
   evento(id, "cadastro");
+  redirect("/app/boas-vindas");
+}
+
+/** Passo 1 da ativação: o comprador digita o e-mail do checkout e recebe o link nesse e-mail (prova que ele é dele). */
+export async function pedirAtivacao(_: Estado, fd: FormData): Promise<Estado> {
+  const ip = await ipDoPedido();
+  const email = texto(fd, "email", 120).toLowerCase();
+  if (!emailOk(email)) return { erro: "Informe um e-mail válido." };
+  if (!dentroDoLimite(`ativar:${ip}`, 6, 15 * 60 * 1000)) return { erro: "Muitas tentativas. Aguarde alguns minutos." };
+  if (!dentroDoLimite(`ativar-email:${email}`, 3, 30 * 60 * 1000)) return { erro: "Já enviamos o link. Confira o e-mail (e o spam) antes de pedir outro." };
+  const lib = liberacaoDe(email);
+  // ativado_em > 0 sem conta = ela foi ativada e apagada: não ganha os créditos de novo (só o admin reabre).
+  if (lib && lib.status === "ativo" && !lib.ativado_em && !um("SELECT id FROM users WHERE email = ?", email)) {
+    await emailAtivacao(email, criarToken(email, "ativar", 2 * DIA));
+  }
+  // Mesma resposta para qualquer e-mail: ninguém descobre quem comprou.
+  return {
+    ok: "Se este e-mail foi usado na compra, enviamos o link de ativação para ele. Pode levar alguns minutos. Se você já ativou, é só entrar com sua senha.",
+  };
+}
+
+/** Passo 2: o link do e-mail abre o formulário; aqui nasce a conta, já com e-mail confirmado e os créditos da compra. */
+export async function ativarConta(_: Estado, fd: FormData): Promise<Estado> {
+  const ip = await ipDoPedido();
+  if (!dentroDoLimite(`ativar-conta:${ip}`, 10, 10 * 60 * 1000)) return { erro: "Muitas tentativas. Aguarde alguns minutos." };
+  const token = texto(fd, "token", 100);
+  const nome = texto(fd, "nome", 80);
+  const whatsapp = normalizarWhats(texto(fd, "whatsapp", 30));
+  const senha = String(fd.get("senha") || "");
+  const email = espiarToken(token, "ativar");
+  if (!email) return { erro: "Este link expirou ou já foi usado. Peça um novo na tela de ativação." };
+  if (nome.length < 3) return { erro: "Informe seu nome completo." };
+  if (whatsapp.length < 12 || whatsapp.length > 13) return { erro: "Informe seu WhatsApp com DDD." };
+  if (senha.length < 8) return { erro: "A senha precisa ter pelo menos 8 caracteres." };
+  if (!fd.get("termos")) return { erro: "Para continuar, aceite os termos de uso e a política de privacidade." };
+  const lib = liberacaoDe(email);
+  if (!lib || lib.status !== "ativo" || lib.ativado_em) return { erro: "Este acesso não está liberado. Fale com o suporte." };
+  if (um("SELECT id FROM users WHERE email = ?", email)) return { erro: "Este e-mail já tem conta. Entre com sua senha." };
+  if (um("SELECT id FROM users WHERE whatsapp = ?", whatsapp)) return { erro: "Já existe uma conta com este WhatsApp." };
+  if (!consumirToken(token, "ativar")) return { erro: "Este link expirou ou já foi usado. Peça um novo na tela de ativação." };
+  const id = novoId();
+  const t = agora();
+  rodar(
+    "INSERT INTO users (id, email, nome, whatsapp, senha_hash, email_verificado, plano, teste_fim, ip_cadastro, criado_em, ultimo_acesso) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+    id,
+    email,
+    nome,
+    whatsapp,
+    hashSenha(senha),
+    1,
+    "teste",
+    t + TESTE.dias * DIA,
+    ip,
+    t,
+    t,
+  );
+  rodar("UPDATE liberacoes SET user_id = ?, ativado_em = ? WHERE email = ?", id, t, email);
+  const novo = um<Usuario>("SELECT * FROM users WHERE id = ?", id)!;
+  concederCreditos(novo, lib.pedido);
+  aplicarComprasPendentes(email);
+  await criarSessao(id);
+  evento(id, "cadastro", { via: "compra" });
   redirect("/app/boas-vindas");
 }
 
@@ -264,6 +329,7 @@ export async function apagarPlano(fd: FormData) {
   const u = await exigirUsuario();
   const plano = planoDoUsuario(u, texto(fd, "plano", 40));
   if (!plano) return;
+  rodar("DELETE FROM ciencias WHERE proposta_id IN (SELECT id FROM proposals WHERE plan_id = ?)", plano.id);
   rodar("DELETE FROM proposals WHERE plan_id = ?", plano.id);
   rodar("DELETE FROM generations WHERE plan_id = ?", plano.id);
   rodar("DELETE FROM plans WHERE id = ?", plano.id);
@@ -276,6 +342,7 @@ export async function apagarPaciente(fd: FormData) {
   const pid = texto(fd, "paciente", 40);
   const p = um<{ id: string }>("SELECT id FROM patients WHERE id = ? AND user_id = ?", pid, u.id);
   if (!p) redirect("/app/pacientes");
+  rodar("DELETE FROM ciencias WHERE proposta_id IN (SELECT id FROM proposals WHERE plan_id IN (SELECT id FROM plans WHERE patient_id = ?))", pid);
   rodar("DELETE FROM proposals WHERE plan_id IN (SELECT id FROM plans WHERE patient_id = ?)", pid);
   rodar("DELETE FROM generations WHERE plan_id IN (SELECT id FROM plans WHERE patient_id = ?)", pid);
   rodar("DELETE FROM plans WHERE patient_id = ?", pid);
@@ -399,6 +466,21 @@ export async function adminPlano(fd: FormData) {
       id,
     );
   }
+  revalidatePath("/admin");
+}
+
+/** Libera na mão um e-mail (compra com outro e-mail, cortesia, parceiro). */
+export async function adminLiberar(fd: FormData) {
+  await exigirAdmin();
+  const email = texto(fd, "email", 120).toLowerCase();
+  if (emailOk(email)) liberarEmail(email, "", "admin");
+  revalidatePath("/admin");
+}
+
+export async function adminRevogar(fd: FormData) {
+  await exigirAdmin();
+  const email = texto(fd, "email", 120).toLowerCase();
+  if (emailOk(email)) revogarEmail(email, "", "admin");
   revalidatePath("/admin");
 }
 

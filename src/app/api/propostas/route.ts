@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { falha, json, usuarioDaApi } from "@/lib/api";
 import { APP_URL } from "@/lib/config";
-import { agora, evento, novoId, rodar, um } from "@/lib/db";
+import { agora, evento, novoId, rodar, todos, um } from "@/lib/db";
+import { Tratamento, VERSAO_CIENCIA } from "@/lib/ciencia";
 import { carimbar, lerArquivo, salvarArquivo } from "@/lib/imagem";
 
 export async function POST(req: Request) {
@@ -10,8 +11,8 @@ export async function POST(req: Request) {
   const c = (await req.json().catch(() => null)) as { planId?: string; titulo?: string; texto?: string; valor?: string } | null;
   const titulo = String(c?.titulo || "").trim().slice(0, 90);
   if (!c?.planId || titulo.length < 3) return falha("Dê um nome ao tratamento proposto.");
-  const plano = um<{ id: string; patient_id: string; foto: string; resultado: string }>(
-    "SELECT id, patient_id, foto, resultado FROM plans WHERE id = ? AND user_id = ?",
+  const plano = um<{ id: string; patient_id: string; foto: string; resultado: string; estado: string }>(
+    "SELECT id, patient_id, foto, resultado, estado FROM plans WHERE id = ? AND user_id = ?",
     c.planId,
     u.id,
   );
@@ -34,6 +35,15 @@ export async function POST(req: Request) {
     String(c.valor || "").trim().slice(0, 40),
     agora(),
   );
+  // Tratamentos simulados neste plano: definem o que o paciente lê e confirma na página da proposta.
+  const tratamentos: Tratamento[] = [];
+  try {
+    if (Number(JSON.parse(plano.estado || "{}").nivel) > 0) tratamentos.push("clareamento");
+  } catch {}
+  for (const g of todos<{ tipo: string }>("SELECT DISTINCT tipo FROM generations WHERE plan_id = ? AND status = 'pronto'", plano.id)) {
+    if (g.tipo === "lentes" || g.tipo === "aparelho") tratamentos.push(g.tipo);
+  }
+  rodar("INSERT INTO ciencias (proposta_id, tratamentos, versao) VALUES (?,?,?)", id, JSON.stringify(tratamentos), VERSAO_CIENCIA);
   evento(u.id, "proposta_criada");
   return json({ id, token, url: `${APP_URL}/p/${token}` });
 }
